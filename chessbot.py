@@ -1,141 +1,128 @@
 
 
-#!/usr/bin/env python3
-# chessbot.py — CS Chess Bot v0.1 (Python 3.8+ compatible)
+# chessbot.py — Hala's version (structure & names your own)
 
 from datetime import datetime
-from typing import Optional
 import random
 import sys
-
 import chess  # pip install python-chess
 
 
-BANNER = """
-=====================================================
-                 Chess Bot v0.1
-=====================================================
-"""
-
-
-def ask(prompt: str) -> str:
-    """Prompt user and return trimmed input. Exit cleanly if input is closed."""
+def ask_user(message):
     try:
-        return input(prompt).strip()
+        return input(message).strip()
     except EOFError:
-        print("\nGoodbye.")
+        print("\n(bye)")
         raise SystemExit
 
 
-def print_fen(board: chess.Board, prefix: str = "New FEN position:") -> None:
-    """Print the board as a FEN string (single-line position snapshot)."""
-    print(f"{prefix} {board.fen()}")
+def show_banner():
+    print("=" * 60)
+    print("        CSC 290 — Chess Bot v0.1 (Hala’s build)")
+    print("=" * 60)
+    print("Started at:", datetime.now())
 
 
-def parse_uci_move(board: chess.Board, text: str) -> Optional[chess.Move]:
-    """
-    Convert 'e2e4' (optionally with promotion like 'e7e8q') to a Move.
-    Return None if invalid format or illegal in this position.
-    """
+def choose_bot_color():
+    ans = ask_user("Should the BOT play as White or Black? (w/b): ").lower()
+    while ans not in ("w", "b"):
+        ans = ask_user("Please type 'w' or 'b': ").lower()
+    return ans == "w"  # True if white
+
+
+def make_start_board():
+    # optional FEN
+    fen = ask_user("Enter a starting FEN or press Enter for the standard start: ")
+    if fen == "":
+        return chess.Board()
     try:
-        move = chess.Move.from_uci(text)
+        return chess.Board(fen)
+    except ValueError:
+        print("Invalid FEN; starting from the standard setup.")
+        return chess.Board()
+
+
+def display_position(board, label="Position (FEN):"):
+    print(label, board.fen())
+
+
+def human_is_to_move(board, bot_is_white):
+    # If bot is white → human is black → human to move when board.turn is BLACK
+    # If bot is black → human is white → human to move when board.turn is WHITE
+    if bot_is_white:
+        return board.turn == chess.BLACK
+    else:
+        return board.turn == chess.WHITE
+
+
+def read_human_move(board):
+    text = ask_user("Your move (UCI like e2e4, or e7e8q for promotion): ").lower()
+    try:
+        mv = chess.Move.from_uci(text)
     except ValueError:
         return None
-    return move if move in board.legal_moves else None
+    return mv if mv in board.legal_moves else None
 
 
-def choose_bot_move(board: chess.Board) -> Optional[chess.Move]:
-    """
-    Assignment policy:
-      - If any capturing moves exist, choose one at random.
-      - Otherwise, choose any legal move at random.
-    """
-    legal = list(board.legal_moves)
-    if not legal:
+def pick_bot_move(board):
+    all_moves = list(board.legal_moves)
+    if not all_moves:
         return None
-    captures = [m for m in legal if board.is_capture(m)]
-    pool = captures if captures else legal
+    cap = [m for m in all_moves if board.is_capture(m)]
+    pool = cap if cap else all_moves
     return random.choice(pool)
 
 
-def game_over_message(board: chess.Board) -> str:
-    """Human-readable reason for game end."""
+def game_over_text(board):
     if board.is_checkmate():
-        # Side to move has no legal moves and is in check -> previous mover wins
+        # If it's checkmate, the side whose turn it is is *in check* and has no moves,
+        # which means the *other* side just won.
         winner = "Black" if board.turn == chess.WHITE else "White"
-        return f"Checkmate. {winner} wins."
+        return f"Checkmate — {winner} wins."
     if board.is_stalemate():
-        return "Draw by stalemate."
+        return "Draw — stalemate."
     if board.is_insufficient_material():
-        return "Draw by insufficient material."
+        return "Draw — insufficient material."
     if board.is_seventyfive_moves():
-        return "Draw by 75-move rule."
+        return "Draw — 75-move rule."
     if board.is_fivefold_repetition():
-        return "Draw by fivefold repetition."
-    # (50-move and threefold are claimable; we do not auto-claim in v0.1.)
+        return "Draw — fivefold repetition."
     return "Game over."
 
 
-def main() -> None:
-    # 1) Banner + timestamp
-    print(BANNER)
-    print(f"Time: {datetime.now()}")
+def main():
+    show_banner()
+    bot_is_white = choose_bot_color()
+    board = make_start_board()
+    display_position(board, "Starting FEN:")
 
-    # 2) Ask which color the BOT plays
-    side = ask("Computer Player? (w=white/b=black): ").lower()
-    while side not in {"w", "b"}:
-        side = ask("Please enter 'w' (white) or 'b' (black): ").lower()
-    bot_is_white = (side == "w")
-
-    # 3) Optional starting FEN
-    fen = ask("Starting FEN position? (hit ENTER for standard starting position): ")
-    try:
-        board = chess.Board(fen) if fen else chess.Board()
-    except ValueError:
-        print("Invalid FEN. Starting from standard position instead.")
-        board = chess.Board()
-
-    # Helper: Is it the human's turn right now?
-    # If bot is white, human is black → human moves when board.turn == BLACK.
-    # If bot is black, human is white → human moves when board.turn == WHITE.
-    def human_turn_now() -> bool:
-        return (board.turn == chess.WHITE and not bot_is_white) or \
-               (board.turn == chess.BLACK and bot_is_white)
-
-    # Show initial position
-    print_fen(board, "Starting FEN position:")
-
-    # 4) Main loop: prompt human/bot in turn, print FEN after each move
     while True:
-        # Human's turn?
-        if human_turn_now():
-            color_name = "White" if board.turn == chess.WHITE else "Black"
-            uci = ask(f"{color_name}: ").lower()
-            move = parse_uci_move(board, uci)
-            if move is None:
-                print("Illegal or invalid move. Use UCI like e2e4 (promotion: e7e8q). Try again.")
+        # Human?
+        if human_is_to_move(board, bot_is_white):
+            color = "White" if board.turn == chess.WHITE else "Black"
+            print(f"{color} to move (you).")
+            mv = read_human_move(board)
+            if mv is None:
+                print("That wasn’t a legal UCI move. Try again.")
                 continue
-
-            board.push(move)
-            print_fen(board)
+            board.push(mv)
+            display_position(board)
             if board.is_game_over():
-                print(game_over_message(board))
+                print(game_over_text(board))
                 break
             continue
 
-        # Bot's turn
-        bot_color_name = "white" if bot_is_white else "black"
-        move = choose_bot_move(board)
-        if move is None:
-            # No legal moves for the side to move → game is over
-            print(game_over_message(board))
+        # Bot
+        bot_color = "White" if bot_is_white else "Black"
+        mv = pick_bot_move(board)
+        if mv is None:
+            print(game_over_text(board))
             break
-
-        print(f"Bot (as {bot_color_name}): {move.uci()}")
-        board.push(move)
-        print_fen(board)
+        print(f"Bot ({bot_color}) plays: {mv.uci()}")
+        board.push(mv)
+        display_position(board)
         if board.is_game_over():
-            print(game_over_message(board))
+            print(game_over_text(board))
             break
 
 
@@ -143,7 +130,8 @@ if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        print("\nInterrupted. Exiting.")
+        print("\n(interrupted)")
         sys.exit(0)
+
 
 
